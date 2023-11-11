@@ -70,6 +70,41 @@ where
             fold_inner(key, values.into_iter(), a, &mut f)
         })
     }
+
+    fn count(self) -> usize {
+        let mut n = 0;
+
+        if let Some(group) = self.current_group {
+            n += group.values.count();
+        }
+
+        for (_key, values) in self.groups {
+            n += values.into_iter().count();
+        }
+
+        n
+    }
+
+    fn last(self) -> Option<Self::Item> {
+        // we cannot assume that self.groups is not exhausted,
+        // and we cannot assume that a group has any values
+
+        let mut pair = None;
+
+        if let Some(group) = self.current_group {
+            if let Some(value) = group.values.last() {
+                pair = Some((group.key, value));
+            }
+        }
+
+        for (key, values) in self.groups {
+            if let Some(value) = values.into_iter().last() {
+                pair = Some((key, value));
+            }
+        }
+
+        pair
+    }
 }
 
 pub trait FlatZipExt: Iterator<Item = (Self::Key, Self::Group)> + Sized {
