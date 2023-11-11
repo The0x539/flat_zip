@@ -4,10 +4,75 @@ struct Group<K, G> {
     values: G,
 }
 
+impl<K, G, V> Group<K, G>
+where
+    G: Iterator<Item = V>,
+{
+    fn new(key: K, values: impl IntoIterator<IntoIter = G>) -> Self {
+        Self {
+            key,
+            values: values.into_iter(),
+        }
+    }
+
+    fn last(self) -> Option<(K, V)> {
+        let value = self.values.last()?;
+        Some((self.key, value))
+    }
+}
+
+impl<K, G, V> Group<K, G>
+where
+    K: Clone,
+    G: Iterator<Item = V>,
+{
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, (K, V)) -> B,
+    {
+        self.values.fold(init, |acc, value| {
+            let pair = (self.key.clone(), value);
+            f(acc, pair)
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
-pub struct FlatZip<I, K, T: IntoIterator> {
-    current_group: Option<Group<K, T::IntoIter>>,
+pub struct FlatZip<I, K, G: IntoIterator> {
+    current_group: Option<Group<K, G::IntoIter>>,
     groups: I,
+}
+
+impl<I, K, G, V> FlatZip<I, K, G>
+where
+    K: Clone,
+    I: Iterator<Item = (K, G)>,
+    G: IntoIterator<Item = V>,
+{
+    fn next_group(&mut self) -> Option<Group<K, G::IntoIter>> {
+        if let Some(group) = self.current_group.take() {
+            return Some(group);
+        }
+
+        let (key, values) = self.groups.next()?;
+        Some(Group::new(key, values))
+    }
+
+    fn fold_groups<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Group<K, G::IntoIter>) -> B,
+    {
+        let mut acc = init;
+
+        if let Some(group) = self.current_group {
+            acc = f(acc, group);
+        }
+
+        self.groups.fold(acc, |a, (key, values)| {
+            let group = Group::new(key, values);
+            f(a, group)
+        })
+    }
 }
 
 impl<I, K, G, V> Iterator for FlatZip<I, K, G>
@@ -19,31 +84,21 @@ where
     type Item = (K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(group) = &mut self.current_group {
-            if let Some(value) = group.values.next() {
-                return Some((group.key.clone(), value));
-            }
-        }
-
-        // self.current_group is either absent or empty
-        // go through self.groups until something can produce a value
         loop {
-            let Some((key, values)) = self.groups.next() else {
+            let Some(mut group) = self.next_group() else {
                 // there are no more groups, so iteration is over
                 return None;
             };
 
-            let mut values = values.into_iter();
-            let Some(value) = values.next() else {
+            let Some(value) = group.values.next() else {
                 // this group was empty, but the next one might not be
                 continue;
             };
 
-            let k = key.clone();
+            let key = group.key.clone();
             // save the rest of the group for later
-            self.current_group = Some(Group { key, values });
-
-            return Some((k, value));
+            self.current_group = Some(group);
+            return Some((key, value));
         }
     }
 
@@ -51,59 +106,15 @@ where
     where
         F: FnMut(B, (K, V)) -> B,
     {
-        fn fold_inner<K, G, V, B, F>(key: K, values: G, init: B, mut f: F) -> B
-        where
-            K: Clone,
-            G: Iterator<Item = V>,
-            F: FnMut(B, (K, V)) -> B,
-        {
-            values.fold(init, |acc, value| f(acc, (key.clone(), value)))
-        }
-
-        let mut acc = init;
-
-        if let Some(group) = self.current_group {
-            acc = fold_inner(group.key, group.values, acc, &mut f);
-        }
-
-        self.groups.fold(acc, |a, (key, values)| {
-            fold_inner(key, values.into_iter(), a, &mut f)
-        })
+        self.fold_groups(init, |acc, group| group.fold(acc, &mut f))
     }
 
     fn count(self) -> usize {
-        let mut n = 0;
-
-        if let Some(group) = self.current_group {
-            n += group.values.count();
-        }
-
-        for (_key, values) in self.groups {
-            n += values.into_iter().count();
-        }
-
-        n
+        self.fold_groups(0, |n, group| n + group.values.count())
     }
 
     fn last(self) -> Option<Self::Item> {
-        // we cannot assume that self.groups is not exhausted,
-        // and we cannot assume that a group has any values
-
-        let mut pair = None;
-
-        if let Some(group) = self.current_group {
-            if let Some(value) = group.values.last() {
-                pair = Some((group.key, value));
-            }
-        }
-
-        for (key, values) in self.groups {
-            if let Some(value) = values.into_iter().last() {
-                pair = Some((key, value));
-            }
-        }
-
-        pair
+        self.fold_groups(None, |acc, group| group.last().or(acc))
     }
 }
 
