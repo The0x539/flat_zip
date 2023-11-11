@@ -46,6 +46,30 @@ where
             return Some((k, value));
         }
     }
+
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, (K, V)) -> B,
+    {
+        fn fold_inner<K, G, V, B, F>(key: K, values: G, init: B, mut f: F) -> B
+        where
+            K: Clone,
+            G: Iterator<Item = V>,
+            F: FnMut(B, (K, V)) -> B,
+        {
+            values.fold(init, |acc, value| f(acc, (key.clone(), value)))
+        }
+
+        let mut acc = init;
+
+        if let Some(group) = self.current_group {
+            acc = fold_inner(group.key, group.values, acc, &mut f);
+        }
+
+        self.groups.fold(acc, |a, (key, values)| {
+            fold_inner(key, values.into_iter(), a, &mut f)
+        })
+    }
 }
 
 pub trait FlatZipExt: Iterator<Item = (Self::Key, Self::Group)> + Sized {
