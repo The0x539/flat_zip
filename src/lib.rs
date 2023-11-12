@@ -5,7 +5,7 @@ mod groups;
 #[cfg(test)]
 mod tests;
 
-use flat_zip::FlatZip;
+pub use flat_zip::FlatZip;
 
 pub trait FlatZipExt: Iterator<Item = (Self::Key, Self::Group)> + Sized {
     type Key: Clone;
