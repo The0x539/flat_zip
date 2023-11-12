@@ -1,6 +1,7 @@
 use crate::{group::Group, groups::Groups};
-use std::iter::Fuse;
+use std::iter::{Fuse, FusedIterator};
 
+#[derive(Debug, Clone)]
 pub struct FlatZip<I, K, G>
 where
     I: Iterator<Item = (K, G)>,
@@ -151,4 +152,12 @@ where
     {
         self.rfold_groups(init, |acc, group| group.rfold(acc, &mut f))
     }
+}
+
+impl<I, K, G> FusedIterator for FlatZip<I, K, G>
+where
+    I: Iterator<Item = (K, G)>,
+    K: Clone,
+    G: IntoIterator,
+{
 }

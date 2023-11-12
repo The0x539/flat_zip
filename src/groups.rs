@@ -2,6 +2,7 @@ use std::iter::FusedIterator;
 
 use crate::group::Group;
 
+#[derive(Debug, Clone)]
 pub struct Groups<I> {
     iter: I,
 }
